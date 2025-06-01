@@ -1,6 +1,5 @@
 package config;
 
-import java.security.Key;
 import java.util.Date;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -13,9 +12,9 @@ import org.springframework.stereotype.Component;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
+import javax.crypto.SecretKey;
 
 @Component
 public class JwtTokenProvider {
@@ -26,7 +25,7 @@ public class JwtTokenProvider {
     @Value("${jwt.expiration:3600000}")
     private long jwtExpiration;
 
-    private Key key;
+    private SecretKey key;
 
     private final Map<String, String> tokenBlacklist = new ConcurrentHashMap<>();
 
@@ -41,31 +40,33 @@ public class JwtTokenProvider {
         Date expiryDate = new Date(now.getTime() + jwtExpiration);
 
         return Jwts.builder()
-                .setSubject(userDetails.getUsername())
+                .subject(userDetails.getUsername())
                 .claim("roles", userDetails.getAuthorities())
-                .setIssuedAt(now)
-                .setExpiration(expiryDate)
-                .signWith(key, SignatureAlgorithm.HS512)
+                .issuedAt(now)
+                .expiration(expiryDate)
+                .signWith(key) // Método moderno sem SignatureAlgorithm
                 .compact();
     }
 
     public String getUsernameFromJWT(String token) {
-        Claims claims = Jwts.parserBuilder()
-                .setSigningKey(key)
+        Claims claims = Jwts.parser()
+                .verifyWith(key)
                 .build()
-                .parseClaimsJws(token)
-                .getBody();
+                .parseSignedClaims(token)
+                .getPayload();
+        
         return claims.getSubject();
     }
+
     public boolean validateToken(String token) {
         try {
             if (tokenBlacklist.containsKey(token)) {
                 return false;
             }
-            Jwts.parserBuilder()
-                    .setSigningKey(key)
-                    .build()
-                    .parseClaimsJws(token);
+            Jwts.parser()
+                .verifyWith(key)
+                .build()
+                .parseSignedClaims(token);
             return true;
         } catch (JwtException | IllegalArgumentException e) {
             return false;
